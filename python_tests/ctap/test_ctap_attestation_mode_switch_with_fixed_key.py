@@ -4,7 +4,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from fido2.ctap2.base import args
 
-from ctap.ctap_test import BasicAttestationTestCase
+from .ctap_test import BasicAttestationTestCase
 
 
 class AttestationModeSwitchWithFixedKeyTestCase(BasicAttestationTestCase):

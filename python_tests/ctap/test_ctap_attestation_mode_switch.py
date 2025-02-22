@@ -5,7 +5,7 @@ from fido2.ctap2.base import args
 from fido2.webauthn import Aaguid
 from parameterized import parameterized
 
-from ctap.ctap_test import BasicAttestationTestCase
+from .ctap_test import BasicAttestationTestCase
 
 
 class AttestationModeSwitchTestCase(BasicAttestationTestCase):

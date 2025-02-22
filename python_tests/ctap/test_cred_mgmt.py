@@ -4,7 +4,7 @@ from fido2.ctap2.extensions import CredProtectExtension
 from fido2.webauthn import ResidentKeyRequirement, PublicKeyCredentialUserEntity, PublicKeyCredentialDescriptor
 from parameterized import parameterized
 
-from ctap.ctap_test import CredManagementBaseTestCase, FixedPinUserInteraction
+from .ctap_test import CredManagementBaseTestCase, FixedPinUserInteraction
 
 
 class CredManagementTestCase(CredManagementBaseTestCase):
