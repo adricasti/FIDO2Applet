@@ -3,7 +3,7 @@ from fido2.ctap import CtapError
 from fido2.webauthn import ResidentKeyRequirement
 from parameterized import parameterized
 
-from ctap.ctap_test import CTAPTestCase
+from .ctap_test import CTAPTestCase
 
 
 class ResetTestCase(CTAPTestCase):

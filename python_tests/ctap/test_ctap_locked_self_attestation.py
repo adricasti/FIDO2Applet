@@ -5,7 +5,7 @@ from fido2.ctap import CtapError
 from fido2.ctap2.base import args
 from fido2.webauthn import Aaguid
 
-from ctap.ctap_test import CTAPTestCase
+from .ctap_test import CTAPTestCase
 
 
 class LockedSelfAttestationTestCase(CTAPTestCase):

@@ -4,7 +4,7 @@ from typing import Optional
 from fido2.ctap2.base import args
 from parameterized import parameterized
 
-from ctap.ctap_test import BasicAttestationTestCase
+from .ctap_test import BasicAttestationTestCase
 
 
 class ExtendedAPDUTestCase(BasicAttestationTestCase):
