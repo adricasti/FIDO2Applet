@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives._serialization import Encoding
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey, EllipticCurvePrivateKey
-from fido2.client import UserInteraction, Fido2Client, _Ctap2ClientBackend
+from fido2.client import UserInteraction, Fido2Client, _Ctap2ClientBackend, DefaultClientDataCollector
 from fido2.cose import ES256
 from fido2.ctap import CtapDevice
 from fido2.ctap1 import Ctap1
@@ -28,11 +28,7 @@ from fido2.pcsc import CtapPcscDevice
 from fido2.webauthn import ResidentKeyRequirement, PublicKeyCredentialCreationOptions, PublicKeyCredentialUserEntity, \
     PublicKeyCredentialRpEntity, PublicKeyCredentialParameters, PublicKeyCredentialType, \
     AuthenticatorSelectionCriteria, UserVerificationRequirement, PublicKeyCredentialDescriptor, \
-    AuthenticatorAttestationResponse, PublicKeyCredentialRequestOptions
-
-import fido2.features
-
-fido2.features.webauthn_json_mapping.enabled = False
+    RegistrationResponse, PublicKeyCredentialRequestOptions
 
 
 class CommandType(enum.Enum):
@@ -370,8 +366,8 @@ class CTAPTestCase(JCardSimTestCase, abc.ABC):
             user_interaction = UserInteraction()
         if origin is None:
             origin = 'https://' + self.rp_id
-        return Fido2Client(self.device, origin=origin,
-                           extension_types=extensions, user_interaction=user_interaction)
+        return Fido2Client(self.device, client_data_collector=DefaultClientDataCollector(origin),
+                           extensions=extensions, user_interaction=user_interaction)
 
     def get_high_level_make_cred_options(self,
                                          resident_key: ResidentKeyRequirement = ResidentKeyRequirement.DISCOURAGED,
@@ -425,18 +421,18 @@ class CTAPTestCase(JCardSimTestCase, abc.ABC):
         )
 
     def get_descriptor_from_cred_id(self, cred: bytes) -> PublicKeyCredentialDescriptor:
-        return PublicKeyCredentialDescriptor(
-            type=PublicKeyCredentialType.PUBLIC_KEY,
-            id=cred
-        )
+        return {
+            "type": PublicKeyCredentialType.PUBLIC_KEY,
+            "id": cred
+        }
 
-    def get_descriptor_from_cred(self, cred: AuthenticatorAttestationResponse) -> PublicKeyCredentialDescriptor:
-        return self.get_descriptor_from_cred_id(cred.attestation_object.auth_data.credential_data.credential_id)
+    def get_descriptor_from_cred(self, cred: RegistrationResponse) -> PublicKeyCredentialDescriptor:
+        return self.get_descriptor_from_cred_id(cred.response.attestation_object.auth_data.credential_data.credential_id)
 
     def get_descriptor_from_ll_cred(self, cred: AttestationResponse) -> PublicKeyCredentialDescriptor:
         return self.get_descriptor_from_cred_id(cred.auth_data.credential_data.credential_id)
 
-    def get_high_level_assertion_opts_from_cred(self, cred: Optional[AuthenticatorAttestationResponse] = None,
+    def get_high_level_assertion_opts_from_cred(self, cred: Optional[RegistrationResponse] = None,
                                                 client_data: Optional[bytes] = None, rp_id: Optional[str] = None,
                                                 extensions: Optional[
                                                     dict[str, Any]] = None,
