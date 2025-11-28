@@ -282,6 +282,6 @@ class LargeBlobsTestCase(BasicAttestationTestCase):
             resident_key=ResidentKeyRequirement.REQUIRED
         ))
 
-        self.assertEqual({}, cred.extension_results)
+        self.assertEqual({}, cred.client_extension_results)
 
 

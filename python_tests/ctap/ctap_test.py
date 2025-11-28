@@ -366,8 +366,22 @@ class CTAPTestCase(JCardSimTestCase, abc.ABC):
             user_interaction = UserInteraction()
         if origin is None:
             origin = 'https://' + self.rp_id
-        return Fido2Client(self.device, client_data_collector=DefaultClientDataCollector(origin),
-                           extensions=extensions, user_interaction=user_interaction)
+        # Accept either extension instances or classes; instantiate classes
+        realized_extensions = []
+        for ext in extensions:
+            if isinstance(ext, type):
+                try:
+                    realized_extensions.append(ext())
+                except Exception as e:
+                    raise RuntimeError(f"Failed to instantiate extension {ext}: {e}")
+            else:
+                realized_extensions.append(ext)
+        return Fido2Client(
+            self.device, 
+            client_data_collector=DefaultClientDataCollector(origin),
+            extensions=realized_extensions,
+            user_interaction=user_interaction
+        )
 
     def get_high_level_make_cred_options(self,
                                          resident_key: ResidentKeyRequirement = ResidentKeyRequirement.DISCOURAGED,
@@ -652,6 +666,6 @@ class CredManagementBaseTestCase(CTAPTestCase, abc.ABC):
         )
         # noinspection PyTypeChecker
         be: _Ctap2ClientBackend = client._backend
-        token = be._get_token(ClientPin(self.ctap2), permissions=permissions,
+        token = be._get_token(be.info, ClientPin(self.ctap2), permissions=permissions,
                               rp_id=None, event=None, on_keepalive=None, allow_internal_uv=False)
         return CredentialManagement(self.ctap2, pin_uv_protocol=PinProtocolV2(), pin_uv_token=token)

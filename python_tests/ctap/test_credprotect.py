@@ -31,7 +31,7 @@ class CredProtectTestCase(CTAPTestCase):
                 "credentialProtectionPolicy": policy
             }
         ))
-        self.assertEqual(level, res.attestation_object.auth_data.extensions.get('credProtect'))
+        self.assertEqual(level, res.response.attestation_object.auth_data.extensions.get('credProtect'))
 
         self.softResetCard()  # Ensure everything is cleared from memory
 
@@ -144,7 +144,7 @@ class CredProtectTestCase(CTAPTestCase):
             {
                 "credentialProtectionPolicy": policy
             }
-        ))
+        )).response
         self.basic_makecred_params['exclude_list'] = [{
             "type": "public-key",
             "id": res.attestation_object.auth_data.credential_data.credential_id
@@ -160,7 +160,7 @@ class CredProtectTestCase(CTAPTestCase):
             {
                 "credentialProtectionPolicy": policy
             }
-        ))
+        )).response
         self.basic_makecred_params['exclude_list'] = [{
             "type": "public-key",
             "id": res.attestation_object.auth_data.credential_data.credential_id
@@ -176,7 +176,7 @@ class CredProtectTestCase(CTAPTestCase):
             {
                 "credentialProtectionPolicy": policy
             }
-        ))
+        )).response
         self.basic_makecred_params['exclude_list'] = [{
             "type": "public-key",
             "id": res.attestation_object.auth_data.credential_data.credential_id
@@ -259,7 +259,7 @@ class CredProtectRKVisTestCase(CredManagementBaseTestCase):
             {
                 "credentialProtectionPolicy": policy
             }
-        ))
+        )).response
         extensions = res.attestation_object.auth_data.extensions
         if policy is None:
             self.assertIsNone(extensions)

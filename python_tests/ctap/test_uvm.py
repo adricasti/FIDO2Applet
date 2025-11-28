@@ -62,7 +62,7 @@ class UVMTestCase(CTAPTestCase):
             )
         )
 
-        self.assertEqual([[2048, 10, 4]], cred.extension_results['uvm'])
+        self.assertEqual([[2048, 10, 4]], cred.client_extension_results['uvm'])
 
     def test_uvm_with_pin_on_get_assertion(self):
         cred = self.get_high_level_client().make_credential(self.get_high_level_make_cred_options())
