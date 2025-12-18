@@ -91,21 +91,26 @@ class CredManagementTestCase(CredManagementBaseTestCase):
     def test_creating_many_rks(self):
         client = self.get_high_level_client(extensions=[CredProtectExtension],
                                             user_interaction=FixedPinUserInteraction(self.pin))
-        client._verify_rp_id = lambda x: True
         resident_key = ResidentKeyRequirement.REQUIRED
         first_cred = client.make_credential(options=self.get_high_level_make_cred_options(
             resident_key
         )).response
         for x in range(100):
             rp_id = secrets.token_hex(20)
-            client.make_credential(options=self.get_high_level_make_cred_options(
+            # Create a new client for each different RP ID
+            loop_client = self.get_high_level_client(
+                extensions=[CredProtectExtension()],
+                user_interaction=FixedPinUserInteraction(self.pin),
+                origin='https://' + rp_id
+            )
+            loop_client.make_credential(options=self.get_high_level_make_cred_options(
                 resident_key, rp_id=rp_id
             ))
 
         res = client.get_assertion(self.get_high_level_assertion_opts_from_cred(cred=None, rp_id=self.rp_id))
         assertions = res.get_assertions()
         self.assertEqual(1, len(assertions))
-        self.assertEqual(res.get_response(0).credential_id,
+        self.assertEqual(res.get_response(0).raw_id,
                          first_cred.attestation_object.auth_data.credential_data.credential_id)
 
     def test_enumerating_mixed_security_creds(self):
@@ -115,7 +120,7 @@ class CredManagementTestCase(CredManagementBaseTestCase):
         hs_cred = pin_client.make_credential(options=self.get_high_level_make_cred_options(
             resident_key,
             {
-                "credentialProtectionPolicy": CredProtectExtension.POLICY.REQUIRED
+                "credentialProtectionPolicy": CredProtectExtension.POLICY.REQUIRED.value
             }
         )).response
         other_rp = secrets.token_hex(18)
@@ -125,7 +130,7 @@ class CredManagementTestCase(CredManagementBaseTestCase):
         other_hs_cred = pin_client_other_suffix.make_credential(options=self.get_high_level_make_cred_options(
             resident_key,
             {
-                "credentialProtectionPolicy": CredProtectExtension.POLICY.REQUIRED
+                "credentialProtectionPolicy": CredProtectExtension.POLICY.REQUIRED.value
             },
             rp_id=other_rp
         )).response
