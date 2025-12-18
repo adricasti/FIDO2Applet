@@ -4,6 +4,7 @@ from parameterized import parameterized
 from fido2.client import UserInteraction
 from fido2.ctap2 import ClientPin
 from fido2.ctap2.extensions import HmacSecretExtension, CredBlobExtension
+from fido2.utils import websafe_decode
 from fido2.webauthn import ResidentKeyRequirement, AuthenticationResponse, UserVerificationRequirement
 
 from .ctap_test import CTAPTestCase, FixedPinUserInteraction
@@ -31,10 +32,10 @@ class HMACSecretTestCase(CTAPTestCase):
         blob = secrets.token_bytes(32)
 
         client = self.get_high_level_client(
-            extensions=[HmacSecretExtension, CredBlobExtension]
+            extensions=[HmacSecretExtension(allow_hmac_secret=True), CredBlobExtension()]
         )
         hmac_only_client = self.get_high_level_client(
-            extensions=[HmacSecretExtension]
+            extensions=[HmacSecretExtension(allow_hmac_secret=True)]
         )
 
         cred = client.make_credential(options=self.get_high_level_make_cred_options(
@@ -78,7 +79,7 @@ class HMACSecretTestCase(CTAPTestCase):
         self.assertEqual(blob, auth_exts2.get("credBlob"))
 
     def test_uv_and_non_uv_yield_different_values(self):
-        no_pin_client = self.get_high_level_client(extensions=[HmacSecretExtension])
+        no_pin_client = self.get_high_level_client(extensions=[HmacSecretExtension(allow_hmac_secret=True)])
         cred = no_pin_client.make_credential(options=self.get_high_level_make_cred_options(
             extensions={
                 "hmacCreateSecret": True
@@ -99,7 +100,7 @@ class HMACSecretTestCase(CTAPTestCase):
 
         pin = secrets.token_hex(30)
         ClientPin(self.ctap2).set_pin(pin)
-        pin_client = self.get_high_level_client(extensions=[HmacSecretExtension],
+        pin_client = self.get_high_level_client(extensions=[HmacSecretExtension(allow_hmac_secret=True)],
                                                 user_interaction=FixedPinUserInteraction(pin))
         assertion_after = pin_client.get_assertion(
             self.get_high_level_assertion_opts_from_cred(cred,
@@ -135,7 +136,7 @@ class HMACSecretTestCase(CTAPTestCase):
             user_interaction = FixedPinUserInteraction(pin)
             ClientPin(self.ctap2).set_pin(pin)
 
-        client = self.get_high_level_client(extensions=[HmacSecretExtension],
+        client = self.get_high_level_client(extensions=[HmacSecretExtension(allow_hmac_secret=True)],
                                             user_interaction=user_interaction)
 
         cred = client.make_credential(options=self.get_high_level_make_cred_options(
@@ -163,7 +164,8 @@ class HMACSecretTestCase(CTAPTestCase):
             #                          assertion.signature)
             self.assertEqual(1, len(assertions.get_assertions()))
             assertion = assertions.get_response(0)
-            hmac = assertion.client_extension_results['hmacGetSecret']['output1']
+            hmac_b64 = assertion.client_extension_results['hmacGetSecret'].get('output1')
+            hmac = websafe_decode(hmac_b64)
             self.assertEqual(32, len(hmac))
             return hmac
 
