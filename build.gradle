@@ -42,7 +42,7 @@ task classesCap(type: JavaCompile) {
     source = sourceSets.main.java
     classpath = sourceSets.main.compileClasspath
     destinationDirectory = file("${buildDir}/classes/jcdk")
-    options.release = 7
+    options.release = 8
 }
 
 task buildCap(type: JavaExec) {

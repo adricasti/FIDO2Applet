@@ -48,7 +48,7 @@ class LogPrintHandler:
             print(msg)
 
 
-class TestModes(enum.Enum):
+class CtapTransport(enum.Enum):
     PCSC = "pcsc"
     HID = "hid"
     RAW = "raw"
@@ -84,7 +84,7 @@ class WrapperDevice(CtapDevice):
 
 
 class JCardSimTestCase(TestCase, abc.ABC):
-    MODE: TestModes = TestModes.RAW
+    MODE: CtapTransport = CtapTransport.RAW
 
     q_in: ClassVar[Queue]
     q_out: ClassVar[Queue]
@@ -176,13 +176,13 @@ class JCardSimTestCase(TestCase, abc.ABC):
         cls.start_jvm()
         from us.q3q.fido2 import VSim
 
-        if cls.MODE in (TestModes.PCSC,):
+        if cls.MODE in (CtapTransport.PCSC,):
             sim = VSim.startBackgroundSimulator()
         else:
             sim = VSim.startForegroundSimulator()
         VSim.installApplet(sim, bytes())
 
-        if cls.MODE == TestModes.HID:
+        if cls.MODE == CtapTransport.HID:
             cls.launch_hid_proxy(VSim, sim, None)
 
         startup_q.put(None)
@@ -284,11 +284,11 @@ class CTAPTestCase(JCardSimTestCase, abc.ABC):
         if install_params is None:
             install_params = bytes([0xA1, 0x00, 0xF5])
         super().setUp(install_params)
-        if self.MODE == TestModes.PCSC:
+        if self.MODE == CtapTransport.PCSC:
             devs = list(CtapPcscDevice.list_devices(self.VIRTUAL_DEVICE_NAME))
             assert 1 == len(devs)
             self.device = devs[0]
-        elif self.MODE == TestModes.HID:
+        elif self.MODE == CtapTransport.HID:
             devs = list(CtapHidDevice.list_devices())
             assert 1 == len(devs)
             self.device = devs[0]
