@@ -82,7 +82,7 @@ class U2FTestCase(BasicAttestationTestCase):
             extensions={
                 "credentialProtectionPolicy": CredProtectExtension.POLICY.OPTIONAL_WITH_LIST
             }
-        ))
+        )).response
         self.ctap1.authenticate(client_param=secrets.token_bytes(32),
                                 app_param=self.rp_hash,
                                 key_handle=cred.attestation_object.auth_data.credential_data.credential_id)
@@ -96,7 +96,7 @@ class U2FTestCase(BasicAttestationTestCase):
             extensions={
                 "credentialProtectionPolicy": CredProtectExtension.POLICY.REQUIRED
             }
-        ))
+        )).response
         with self.assertRaises(ApduError) as e:
             self.ctap1.authenticate(client_param=secrets.token_bytes(32),
                                     app_param=self.rp_hash,
@@ -107,7 +107,7 @@ class U2FTestCase(BasicAttestationTestCase):
         client = self.get_high_level_client()
         cred = client.make_credential(options=self.get_high_level_make_cred_options(
             resident_key=ResidentKeyRequirement.REQUIRED
-        ))
+        )).response
         self.ctap1.authenticate(client_param=secrets.token_bytes(32),
                                 app_param=self.rp_hash,
                                 key_handle=cred.attestation_object.auth_data.credential_data.credential_id)
@@ -119,7 +119,7 @@ class U2FTestCase(BasicAttestationTestCase):
             extensions={
                 "credentialProtectionPolicy": CredProtectExtension.POLICY.OPTIONAL_WITH_LIST
             }
-        ))
+        )).response
         self.ctap1.authenticate(client_param=secrets.token_bytes(32),
                                 app_param=self.rp_hash,
                                 key_handle=cred.attestation_object.auth_data.credential_data.credential_id)
@@ -131,7 +131,7 @@ class U2FTestCase(BasicAttestationTestCase):
             extensions={
                 "credentialProtectionPolicy": CredProtectExtension.POLICY.REQUIRED
             }
-        ))
+        )).response
         with self.assertRaises(ApduError) as e:
             self.ctap1.authenticate(client_param=secrets.token_bytes(32),
                                     app_param=self.rp_hash,
@@ -148,7 +148,7 @@ class U2FTestCase(BasicAttestationTestCase):
             extensions={
                 "credentialProtectionPolicy": CredProtectExtension.POLICY.REQUIRED
             }
-        ))
+        )).response
         with self.assertRaises(ApduError) as e:
             self.ctap1.authenticate(client_param=secrets.token_bytes(32),
                                     app_param=self.rp_hash,

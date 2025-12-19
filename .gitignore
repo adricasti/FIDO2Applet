@@ -1,9 +1,10 @@
 /.gradle
 /.idea
 /.vscode
+/.venv
 /build
-/venv
+/lib
 .env
 __pycache__
+.pytest_cache
 /bin
-.env

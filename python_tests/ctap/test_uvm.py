@@ -1,8 +1,7 @@
 from typing import Optional, Any, Dict
 
-from fido2.ctap2 import ClientPin, AssertionResponse, AttestationResponse
-from fido2.ctap2.extensions import Ctap2Extension
-from fido2.ctap2.pin import PinProtocol
+from fido2.ctap2 import ClientPin
+from fido2.ctap2.extensions import Ctap2Extension, RegistrationExtensionProcessor, AuthenticationExtensionProcessor
 from fido2.webauthn import UserVerificationRequirement
 
 from .ctap_test import CTAPTestCase, FixedPinUserInteraction
@@ -15,32 +14,34 @@ class UVMExtension(Ctap2Extension):
     def is_supported(self) -> bool:
         return True
 
-    def process_create_input(self, inputs: Dict[str, Any]) -> Any:
-        return True
+    def make_credential(self, ctap, options, pin_protocol):
+        inputs = options.extensions or {}
+        if inputs.get(self.NAME) or inputs.get("uvm"):
+            class Processor(RegistrationExtensionProcessor):
+                def prepare_inputs(self, pin_token):
+                    return {UVMExtension.NAME: True}
 
-    def process_create_output(
-        self,
-        attestation_response: AttestationResponse,
-        token: Optional[str],
-        pin_protocol: Optional[PinProtocol],
-    ) -> Optional[Dict[str, Any]]:
-        return {
-            "uvm": attestation_response.auth_data.extensions.get(self.NAME)
-        }
+                def prepare_outputs(self, response, pin_token):
+                    extensions = response.auth_data.extensions or {}
+                    return {"uvm": extensions.get(UVMExtension.NAME)}
 
-    def process_get_input(self, inputs: Dict[str, Any]) -> Any:
-        return True
+            return Processor()
+        return None
 
-    def process_get_output(
-            self,
-            assertion_response: AssertionResponse,
-            token: Optional[str],
-            pin_protocol: Optional[PinProtocol],
-    ) -> Optional[Dict[str, Any]]:
-        return {
-            "uvm": assertion_response.auth_data.extensions.get(self.NAME)
-        }
+    def get_assertion(self, ctap, options, pin_protocol):
+        inputs = options.extensions or {}
+        if inputs.get(self.NAME) or inputs.get("uvm"):
+            class Processor(AuthenticationExtensionProcessor):
+                def prepare_inputs(self, selected, pin_token):
+                    return {UVMExtension.NAME: True}
 
+                def prepare_outputs(self, response, pin_token):
+                    extensions = response.auth_data.extensions or {}
+                    return {"uvm": extensions.get(UVMExtension.NAME)}
+
+            return Processor()
+        return None
+        
 
 class UVMTestCase(CTAPTestCase):
 
@@ -58,11 +59,12 @@ class UVMTestCase(CTAPTestCase):
                                             user_interaction=FixedPinUserInteraction(pin))
         cred = client.make_credential(
             self.get_high_level_make_cred_options(
-                user_verification=UserVerificationRequirement.REQUIRED
+                user_verification=UserVerificationRequirement.REQUIRED,
+                extensions={"uvm": True}
             )
         )
 
-        self.assertEqual([[2048, 10, 4]], cred.extension_results['uvm'])
+        self.assertEqual([[2048, 10, 4]], cred.client_extension_results['uvm'])
 
     def test_uvm_with_pin_on_get_assertion(self):
         cred = self.get_high_level_client().make_credential(self.get_high_level_make_cred_options())
@@ -75,7 +77,8 @@ class UVMTestCase(CTAPTestCase):
 
         assertion = client.get_assertion(self.get_high_level_assertion_opts_from_cred(
             cred,
-            user_verification=UserVerificationRequirement.REQUIRED
+            user_verification=UserVerificationRequirement.REQUIRED,
+            extensions={"uvm": True}
         ))
 
         self.assertEqual([[2048, 10, 4]],
@@ -87,7 +90,8 @@ class UVMTestCase(CTAPTestCase):
         client = self.get_high_level_client(extensions=[UVMExtension])
 
         assertion = client.get_assertion(self.get_high_level_assertion_opts_from_cred(
-            cred
+            cred,
+            extensions={"uvm": True}
         ))
 
         self.assertEqual([[1, 10, 4]],

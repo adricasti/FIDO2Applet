@@ -89,10 +89,10 @@ class SetMinPinTestCase(CTAPTestCase):
 
         matching_cred = client.make_credential(self.get_high_level_make_cred_options(extensions={
             "minPinLength": True
-        }))
+        })).response
         nonmatching_cred = new_rpid_client.make_credential(self.get_high_level_make_cred_options(extensions={
             "minPinLength": True
-        }, rp_id=new_rpid))
+        }, rp_id=new_rpid)).response
 
         self.assertEqual(6, matching_cred.attestation_object.auth_data.extensions.get('minPinLength'))
         self.assertIsNone(nonmatching_cred.attestation_object.auth_data.extensions)
@@ -197,7 +197,7 @@ class SetMinPinTestCase(CTAPTestCase):
         cred = client.make_credential(self.get_high_level_make_cred_options(extensions={
             "minPinLength": True
         }))
-        self.assertIsNone(cred.extension_results.get("minPinLength"))
+        self.assertIsNone(cred.client_extension_results.get("minPinLength"))
 
     def test_rejects_false_extension_on_makecred(self):
         self.basic_makecred_params['extensions'] = {

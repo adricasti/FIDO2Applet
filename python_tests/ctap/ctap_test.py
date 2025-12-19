@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives._serialization import Encoding
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey, EllipticCurvePrivateKey
-from fido2.client import UserInteraction, Fido2Client, _Ctap2ClientBackend
+from fido2.client import UserInteraction, Fido2Client, _Ctap2ClientBackend, DefaultClientDataCollector
 from fido2.cose import ES256
 from fido2.ctap import CtapDevice
 from fido2.ctap1 import Ctap1
@@ -28,11 +28,7 @@ from fido2.pcsc import CtapPcscDevice
 from fido2.webauthn import ResidentKeyRequirement, PublicKeyCredentialCreationOptions, PublicKeyCredentialUserEntity, \
     PublicKeyCredentialRpEntity, PublicKeyCredentialParameters, PublicKeyCredentialType, \
     AuthenticatorSelectionCriteria, UserVerificationRequirement, PublicKeyCredentialDescriptor, \
-    AuthenticatorAttestationResponse, PublicKeyCredentialRequestOptions
-
-import fido2.features
-
-fido2.features.webauthn_json_mapping.enabled = False
+    RegistrationResponse, PublicKeyCredentialRequestOptions
 
 
 class CommandType(enum.Enum):
@@ -52,7 +48,7 @@ class LogPrintHandler:
             print(msg)
 
 
-class TestModes(enum.Enum):
+class CtapTransport(enum.Enum):
     PCSC = "pcsc"
     HID = "hid"
     RAW = "raw"
@@ -88,7 +84,7 @@ class WrapperDevice(CtapDevice):
 
 
 class JCardSimTestCase(TestCase, abc.ABC):
-    MODE: TestModes = TestModes.RAW
+    MODE: CtapTransport = CtapTransport.RAW
 
     q_in: ClassVar[Queue]
     q_out: ClassVar[Queue]
@@ -180,13 +176,13 @@ class JCardSimTestCase(TestCase, abc.ABC):
         cls.start_jvm()
         from us.q3q.fido2 import VSim
 
-        if cls.MODE in (TestModes.PCSC,):
+        if cls.MODE in (CtapTransport.PCSC,):
             sim = VSim.startBackgroundSimulator()
         else:
             sim = VSim.startForegroundSimulator()
         VSim.installApplet(sim, bytes())
 
-        if cls.MODE == TestModes.HID:
+        if cls.MODE == CtapTransport.HID:
             cls.launch_hid_proxy(VSim, sim, None)
 
         startup_q.put(None)
@@ -288,11 +284,11 @@ class CTAPTestCase(JCardSimTestCase, abc.ABC):
         if install_params is None:
             install_params = bytes([0xA1, 0x00, 0xF5])
         super().setUp(install_params)
-        if self.MODE == TestModes.PCSC:
+        if self.MODE == CtapTransport.PCSC:
             devs = list(CtapPcscDevice.list_devices(self.VIRTUAL_DEVICE_NAME))
             assert 1 == len(devs)
             self.device = devs[0]
-        elif self.MODE == TestModes.HID:
+        elif self.MODE == CtapTransport.HID:
             devs = list(CtapHidDevice.list_devices())
             assert 1 == len(devs)
             self.device = devs[0]
@@ -370,8 +366,22 @@ class CTAPTestCase(JCardSimTestCase, abc.ABC):
             user_interaction = UserInteraction()
         if origin is None:
             origin = 'https://' + self.rp_id
-        return Fido2Client(self.device, origin=origin,
-                           extension_types=extensions, user_interaction=user_interaction)
+        # Accept either extension instances or classes; instantiate classes
+        realized_extensions = []
+        for ext in extensions:
+            if isinstance(ext, type):
+                try:
+                    realized_extensions.append(ext())
+                except Exception as e:
+                    raise RuntimeError(f"Failed to instantiate extension {ext}: {e}")
+            else:
+                realized_extensions.append(ext)
+        return Fido2Client(
+            self.device, 
+            client_data_collector=DefaultClientDataCollector(origin),
+            extensions=realized_extensions,
+            user_interaction=user_interaction
+        )
 
     def get_high_level_make_cred_options(self,
                                          resident_key: ResidentKeyRequirement = ResidentKeyRequirement.DISCOURAGED,
@@ -425,18 +435,18 @@ class CTAPTestCase(JCardSimTestCase, abc.ABC):
         )
 
     def get_descriptor_from_cred_id(self, cred: bytes) -> PublicKeyCredentialDescriptor:
-        return PublicKeyCredentialDescriptor(
-            type=PublicKeyCredentialType.PUBLIC_KEY,
-            id=cred
-        )
+        return {
+            "type": PublicKeyCredentialType.PUBLIC_KEY,
+            "id": cred
+        }
 
-    def get_descriptor_from_cred(self, cred: AuthenticatorAttestationResponse) -> PublicKeyCredentialDescriptor:
-        return self.get_descriptor_from_cred_id(cred.attestation_object.auth_data.credential_data.credential_id)
+    def get_descriptor_from_cred(self, cred: RegistrationResponse) -> PublicKeyCredentialDescriptor:
+        return self.get_descriptor_from_cred_id(cred.response.attestation_object.auth_data.credential_data.credential_id)
 
     def get_descriptor_from_ll_cred(self, cred: AttestationResponse) -> PublicKeyCredentialDescriptor:
         return self.get_descriptor_from_cred_id(cred.auth_data.credential_data.credential_id)
 
-    def get_high_level_assertion_opts_from_cred(self, cred: Optional[AuthenticatorAttestationResponse] = None,
+    def get_high_level_assertion_opts_from_cred(self, cred: Optional[RegistrationResponse] = None,
                                                 client_data: Optional[bytes] = None, rp_id: Optional[str] = None,
                                                 extensions: Optional[
                                                     dict[str, Any]] = None,
@@ -656,6 +666,6 @@ class CredManagementBaseTestCase(CTAPTestCase, abc.ABC):
         )
         # noinspection PyTypeChecker
         be: _Ctap2ClientBackend = client._backend
-        token = be._get_token(ClientPin(self.ctap2), permissions=permissions,
+        token = be._get_token(be.info, ClientPin(self.ctap2), permissions=permissions,
                               rp_id=None, event=None, on_keepalive=None, allow_internal_uv=False)
         return CredentialManagement(self.ctap2, pin_uv_protocol=PinProtocolV2(), pin_uv_token=token)

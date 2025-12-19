@@ -9,18 +9,15 @@ repositories {
     mavenCentral()
 }
 
-configurations {
-    jcdk
-}
-
 dependencies {
     // JCDK dependencies for CAP generation
-    jcdk files("${System.getenv('JC_HOME')}/lib/api_classic-${JavaCardVersion}.jar")
+    compileOnly files("lib/api_classic-${JavaCardVersion}.jar")
     
     // Test dependencies use JCardSim
-    implementation 'com.klinec:jcardsim:3.0.6.0'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    implementation files("lib/jcardsim-3.0.5.jar")
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 test {
@@ -43,18 +40,17 @@ tasks.register('testJar', Jar) {
 // Special task for compiling with JCDK API
 task classesCap(type: JavaCompile) {
     source = sourceSets.main.java
-    classpath = configurations.jcdk
+    classpath = sourceSets.main.compileClasspath
     destinationDirectory = file("${buildDir}/classes/jcdk")
-    sourceCompatibility = 1.7
-    targetCompatibility = 1.7
+    options.release = 8
 }
 
-task(buildCap, type: JavaExec) {
+task buildCap(type: JavaExec) {
     mainClass = "com.sun.javacard.converter.Main"
-    classpath = files("${System.getenv('JC_HOME')}/lib/tools.jar")
+    classpath = files("lib/tools.jar")
     args "-classdir", "${buildDir}/classes/jcdk",
          "-applet", "${AppletAID}",
-         "${PackageName}.FIDO2Applet",
+         "${PackageName}.${AppletName}",
          "-target", "${JavaCardVersion}",
          "${PackageName}",
          "${PackageAID}",
