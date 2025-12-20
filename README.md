@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains sources for a feature-rich, FIDO2 CTAP2.1
+This repository contains sources for a feature-rich, FIDO2 CTAP2.2
 compatible applet targeting the Javacard Classic system, version 3.0.4. In a
 nutshell, this lets you take a smartcard, install an app onto it,
 and have it work as a FIDO2 authenticator device with a variety of
@@ -15,7 +15,8 @@ system locally with [pam-u2f](https://github.com/Yubico/pam-u2f).
 that aren't physically on an ordinary smartcard, such as biometrics or
 other on-board user verification. The implementation in the default configuration
 passes the official FIDO certification test suite version 1.7.17 in
-"CTAP2.1 full feature profile" mode.
+"CTAP2.1 full feature profile" mode. CTAP2.2 features including enhanced
+enterprise attestation with RP filtering are also supported.
 
 In order to run this outside a simulator, you will need
 [a compatible smartcard](docs/requirements.md). Some smartcards which
@@ -98,6 +99,7 @@ If you're a really detail-oriented person, you might enjoy reading
 | CTAP1/U2F                          | Implemented (see [install guide](docs/certs.md))      |
 | CTAP2.0 core                       | Implemented                                           |
 | CTAP2.1 core                       | Implemented                                           |
+| CTAP2.2 core                       | Implemented                                           |
 | Resident keys                      | Implemented                                           |
 | User Presence                      | User always considered present: one verification only |
 | ECDSA (SecP256r1)                  | Implemented                                           |
@@ -112,7 +114,7 @@ If you're a really detail-oriented person, you might enjoy reading
 | CTAP2.1 PIN Protocol 1             | Implemented                                           |
 | CTAP2.1 PIN Protocol 2             | Implemented                                           |
 | CTAP2.1 credential management      | Implemented                                           |
-| CTAP2.1 enterprise attestation     | Implemented in code, disabled                         |
+| CTAP2.1 enterprise attestation     | Implemented with RP filtering                         |
 | CTAP2.1 authenticator config       | Implemented                                           |
 | CTAP2.1 minPinLength extension     | Implemented, default max two RPIDs can receive        |
 | CTAP2.1 credBlob extension         | Implemented, discoverable creds only                  |
