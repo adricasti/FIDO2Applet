@@ -344,6 +344,16 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
      */
     private short filledAttestationData;
     /**
+     * Used for CTAP2 enterprise attestation - should be a CBOR array
+     * where each element contains X.509 certificate data, starting
+     * with the enterprise attestation certificate
+     */
+    private byte[] enterpriseAttestationData;
+    /**
+     * How much of the enterpriseAttestationData has been successfully read so far
+     */
+    private short filledEnterpriseAttestationData;
+    /**
      * General hashing of stuff
      */
     private final MessageDigest sha256;
@@ -1197,6 +1207,9 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                 bufferMem, outputLen, CLIENT_DATA_HASH_LEN);
 
         boolean selfAttestation = attestationKey == null;
+        boolean useEnterpriseAttestation = enterpriseAttestationRequested && 
+                                           enterpriseAttestationData != null && 
+                                           filledEnterpriseAttestationData == enterpriseAttestationData.length;
         byte[] attestationPreamble;
         if (selfAttestation) {
             attester.init(ecKeyPair.getPrivate(), Signature.MODE_SIGN);
@@ -3701,6 +3714,22 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                     apOffset = apdu.getOffsetCdata();
                 }
                 initAttestationKeyStart(apdu, reqBuffer, apOffset, lcEffective);
+                break;
+            case FIDOConstants.CMD_INSTALL_ENTERPRISE_CERTS:
+                boolean extendedEnt = apdu.getOffsetCdata() == ISO7816.OFFSET_EXT_CDATA;
+                short apOffsetEnt;
+                lcEffective = (short)(lc - 5);
+                reqBuffer = fullyReadReq(apdu, lc, amtRead, !extendedEnt);
+                if (extendedEnt) {
+                    apOffsetEnt = (short)(apdu.getOffsetCdata() - 2);
+                    if (lc > 255) {
+                        apOffsetEnt += 1;
+                        lcEffective -= 1;
+                    }
+                } else {
+                    apOffsetEnt = apdu.getOffsetCdata();
+                }
+                initEnterpriseAttestationCerts(apdu, reqBuffer, apOffsetEnt, lcEffective);
                 break;
             default:
                 sendErrorByte(apdu, FIDOConstants.CTAP1_ERR_INVALID_COMMAND);
@@ -7260,6 +7289,73 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         }
 
         return false;
+    }
+
+    /**
+     * Loads enterprise attestation certificates
+     *
+     * @param apdu APDU context object
+     * @param params Byte array of encoded parameters (certificate chain in CBOR format)
+     * @param offset Offset into params array of start of data
+     * @param length Length of parameter data loaded in buffer
+     */
+    private void initEnterpriseAttestationCerts(APDU apdu, byte[] params, short offset, short length) {
+        if (!counter.isZero()) {
+            // Too late!
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_NOT_ALLOWED);
+        }
+
+        if (!attestationSwitchingEnabled) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_NOT_ALLOWED);
+        }
+
+        if (attestationKey == null) {
+            // Must install basic attestation first (which includes the private key)
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_NOT_ALLOWED);
+        }
+
+        if (length < 2) {
+            sendErrorByte(apdu, FIDOConstants.CTAP1_ERR_INVALID_LENGTH);
+        }
+
+        JCSystem.beginTransaction();
+        boolean success = false;
+        try {
+            final short expectedLength = Util.getShort(params, offset);
+            offset += 2;
+            short amountToRead = (short)(length - 2);
+
+            if (amountToRead > expectedLength) {
+                sendErrorByte(apdu, FIDOConstants.CTAP1_ERR_INVALID_LENGTH);
+            }
+
+            if ((params[offset] & 0xF0) != 0x80) {
+                // These bytes should/must be a CBOR array
+                throwException(ISO7816.SW_DATA_INVALID);
+            }
+
+            enterpriseAttestationData = new byte[expectedLength];
+            filledEnterpriseAttestationData = amountToRead;
+            Util.arrayCopy(params, offset,
+                    enterpriseAttestationData, (short) 0, amountToRead);
+
+            if (filledEnterpriseAttestationData == enterpriseAttestationData.length) {
+                // Done!
+                final byte[] buffer = apdu.getBuffer();
+                buffer[0] = FIDOConstants.CTAP2_OK;
+                sendNoCopy(apdu, (short) 1);
+                success = true;
+                return;
+            }
+
+            success = true;
+        } finally {
+            if (success) {
+                JCSystem.commitTransaction();
+            } else {
+                JCSystem.abortTransaction();
+            }
+        }
     }
 
     private short loadAttestationPrivateKey(byte[] params, short offset) {
