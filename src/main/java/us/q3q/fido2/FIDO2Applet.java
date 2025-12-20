@@ -124,6 +124,10 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
      */
     private static final byte MAX_RP_IDS_MIN_PIN_LENGTH = 2;
     /**
+     * Maximum number of RPs that can use enterprise attestation
+     */
+    private static final byte MAX_RP_IDS_ENTERPRISE_ATTESTATION = 3;
+    /**
      * How many times a PIN can be incorrectly entered before the authentiator must be rebooted to proceed.
      * FIDO2 standards say three.
      */
@@ -352,9 +356,9 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
      */
     private boolean alwaysUv;
     /**
-     * Whether enterprise attestation is """enabled"""
+     * Number of RP IDs configured for enterprise attestation (0 means disabled)
      */
-    private boolean enterpriseAttestation = false;
+    private byte numEnterpriseAttestationRPIDs = 0;
     /**
      * Everything that needs to be hot in RAM instead of stored to the flash. All goes away on deselect or reset!
      */
@@ -374,6 +378,10 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
      * Encrypted RPID hashes used for the minPinLength extension
      */
     private final byte[] minPinRPIDs;
+    /**
+     * Encrypted RPID hashes for enterprise attestation allowlist
+     */
+    private final byte[] enterpriseAttestationRPIDs;
     /**
      * How many resident key slots are filled
      */
@@ -645,6 +653,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         boolean uvmRequested = false;
         byte credProtectLevel = 0;
         boolean pinAuthSuccess = false;
+        boolean enterpriseAttestationRequested = false;
 
         defaultOptions();
 
@@ -780,14 +789,12 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                     checkPinProtocolSupported(apdu, pinProtocol);
                     continue;
                 case 0x0A: // enterpriseAttestation
-                    // When "disabled", reject the parameter; when "enabled", ignore it
-                    if (!enterpriseAttestation) {
-                        sendErrorByte(apdu, FIDOConstants.CTAP1_ERR_INVALID_PARAMETER);
-                    }
+                    // Parse the value but defer checking until we have the RP ID hash
                     byte val = buffer[readIdx++];
                     if (val != 0x01 && val != 0x02) {
                         sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_OPTION);
                     }
+                    enterpriseAttestationRequested = true;
                     break;
                 default:
                     break;
@@ -880,6 +887,21 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                 }
             }
             minPinRequested = ok;
+        }
+        if (enterpriseAttestationRequested) {
+            // Check RP is authorized for enterprise attestation
+            boolean ok = false;
+            for (short i = 0; i < MAX_RP_IDS_ENTERPRISE_ATTESTATION; i++) {
+                if (Util.arrayCompare(scratchRPIDHashBuffer, scratchRPIDHashOffset,
+                        enterpriseAttestationRPIDs, (short)(i * RP_HASH_LEN), RP_HASH_LEN) == 0) {
+                    ok = true;
+                    break;
+                }
+            }
+            if (!ok) {
+                // RP not authorized for enterprise attestation
+                sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_UNAUTHORIZED_PERMISSION);
+            }
         }
 
         final short scratchCredHandle = bufferManager.allocate(apdu, CREDENTIAL_ID_LEN, BufferManager.NOT_APDU_BUFFER);
@@ -4477,10 +4499,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
 
         switch (reqBuffer[readIdx++]) {
             case FIDOConstants.AUTH_CONFIG_ENABLE_ENTERPRISE_ATTESTATION:
-                // This does nothing anyway
-                enterpriseAttestation = !enterpriseAttestation;
-                apdu.getBuffer()[0] = FIDOConstants.CTAP2_OK;
-                sendNoCopy(apdu, (short) 1);
+                enableEnterpriseAttestation(apdu, reqBuffer, cmdParamsIdx, cmdParamsLen, lc);
                 break;
             case FIDOConstants.AUTH_CONFIG_SET_MIN_PIN_LENGTH:
                 setMinPin(apdu, reqBuffer, cmdParamsIdx, cmdParamsLen, lc);
@@ -4612,6 +4631,105 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                 Util.arrayFillNonAtomic(minPinRPIDs, (short)(i * RP_HASH_LEN), RP_HASH_LEN, (byte) 0x00);
             }
 
+            ok = true;
+        } finally {
+            if (ok) {
+                JCSystem.commitTransaction();
+            } else {
+                JCSystem.abortTransaction();
+            }
+        }
+
+        apdu.getBuffer()[0] = FIDOConstants.CTAP2_OK;
+        sendNoCopy(apdu, (short) 1);
+    }
+
+    /**
+     * Enable enterprise attestation for specified RP IDs
+     *
+     * @param apdu Request/response context object
+     * @param buffer Buffer containing the request
+     * @param paramsIdx Index where parameters begin
+     * @param paramsLen Length of parameters
+     * @param lc Total length of command
+     */
+    private void enableEnterpriseAttestation(APDU apdu, byte[] buffer, short paramsIdx, short paramsLen, short lc) {
+        // Parse CBOR map with RP IDs
+        // Expected format: map with key 0x01 (rpIds) containing an array of RP ID strings
+        
+        if (paramsLen == 0) {
+            // No parameters - clear all enterprise attestation RPs
+            JCSystem.beginTransaction();
+            boolean ok = false;
+            try {
+                numEnterpriseAttestationRPIDs = 0;
+                Util.arrayFillNonAtomic(enterpriseAttestationRPIDs, (short) 0, 
+                    (short)(MAX_RP_IDS_ENTERPRISE_ATTESTATION * RP_HASH_LEN), (byte) 0x00);
+                ok = true;
+            } finally {
+                if (ok) {
+                    JCSystem.commitTransaction();
+                } else {
+                    JCSystem.abortTransaction();
+                }
+            }
+            apdu.getBuffer()[0] = FIDOConstants.CTAP2_OK;
+            sendNoCopy(apdu, (short) 1);
+            return;
+        }
+
+        short readIdx = paramsIdx;
+        
+        // Expect a map
+        if (buffer[readIdx++] != (byte) 0xA1) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+        }
+        
+        // Expect key 0x01 (rpIds)
+        if (buffer[readIdx++] != 0x01) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
+        }
+        
+        // Expect an array
+        byte arrayHeader = buffer[readIdx++];
+        if ((arrayHeader & 0xF0) != (byte) 0x80) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
+        }
+        
+        byte numRPIDs = (byte)(arrayHeader & 0x0F);
+        if (numRPIDs > MAX_RP_IDS_ENTERPRISE_ATTESTATION) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_LIMIT_EXCEEDED);
+        }
+        
+        short rpIDIdx = readIdx;
+        
+        JCSystem.beginTransaction();
+        boolean ok = false;
+        try {
+            short readOffset = rpIDIdx;
+            short i = 0;
+            for (; i < numRPIDs; i++) {
+                short rpIdLen = 0;
+                if (buffer[readOffset] == 0x78) { // string with one-byte length
+                    rpIdLen = ub(buffer[++readOffset]);
+                    readOffset++;
+                } else if (buffer[readOffset] >= 0x60 && buffer[readOffset] <= 0x77) {
+                    rpIdLen = (short)(buffer[readOffset] - 0x60);
+                    readOffset++;
+                } else {
+                    // aborting the transaction...
+                    sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+                }
+                sha256.doFinal(buffer, readOffset, rpIdLen,
+                        enterpriseAttestationRPIDs, (short)(i * RP_HASH_LEN));
+                readOffset += rpIdLen;
+            }
+            // Clear remaining slots
+            for (; i < MAX_RP_IDS_ENTERPRISE_ATTESTATION; i++) {
+                Util.arrayFillNonAtomic(enterpriseAttestationRPIDs, (short)(i * RP_HASH_LEN), RP_HASH_LEN, (byte) 0x00);
+            }
+            numEnterpriseAttestationRPIDs = numRPIDs;
+            
             ok = true;
         } finally {
             if (ok) {
@@ -5480,9 +5598,10 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
             minPinLength = 4;
             forcePinChange = false;
             alwaysUv = FORCE_ALWAYS_UV;
-            enterpriseAttestation = false;
+            numEnterpriseAttestationRPIDs = 0;
             pinRetryCounter.reset(pinIdx);
             Util.arrayFillNonAtomic(minPinRPIDs, (short) 0, (short) (MAX_RP_IDS_MIN_PIN_LENGTH * RP_HASH_LEN), (byte) 0x00);
+            Util.arrayFillNonAtomic(enterpriseAttestationRPIDs, (short) 0, (short) (MAX_RP_IDS_ENTERPRISE_ATTESTATION * RP_HASH_LEN), (byte) 0x00);
 
             random.generateData(pinKDFSalt, (short) 0, (short) pinKDFSalt.length);
             random.generateData(highSecurityWrappingIV, (short) 0, (short) highSecurityWrappingIV.length);
@@ -5577,11 +5696,18 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                 buffer, offset, (short) aaguid.length);
 
         buffer[offset++] = 0x04; // map key: options
-        buffer[offset++] = (byte) 0xAB; // map: eleven entries
-        /*buffer[offset++] = 0x62; // string: two bytes long
-        buffer[offset++] = 0x65; // 'e'
-        buffer[offset++] = 0x70; // 'p'
-        buffer[offset++] = (byte)(enterpriseAttestation ? 0xF5 : 0xF4); // enabled or not */
+        byte optionsMapSize = (byte) 0xAB; // map: eleven entries base
+        if (numEnterpriseAttestationRPIDs > 0) {
+            optionsMapSize++; // add one for ep option
+        }
+        buffer[offset++] = optionsMapSize;
+        
+        if (numEnterpriseAttestationRPIDs > 0) {
+            buffer[offset++] = 0x62; // string: two bytes long
+            buffer[offset++] = 0x65; // 'e'
+            buffer[offset++] = 0x70; // 'p'
+            buffer[offset++] = (byte) 0xF5; // true - enterprise attestation is enabled
+        }
 
         offset = Util.arrayCopyNonAtomic(CannedCBOR.AUTH_INFO_SECOND, (short) 0,
                 buffer, offset, (short) CannedCBOR.AUTH_INFO_SECOND.length);
@@ -6978,6 +7104,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         lowSecurityWrappingKey = getPersistentAESKey(); // Not really a treasure
         residentKeys = new ResidentKeyData[NUM_RESIDENT_KEY_SLOTS_PER_BATCH];
         minPinRPIDs = new byte[MAX_RP_IDS_MIN_PIN_LENGTH * RP_HASH_LEN];
+        enterpriseAttestationRPIDs = new byte[MAX_RP_IDS_ENTERPRISE_ATTESTATION * RP_HASH_LEN];
         numResidentCredentials = 0;
         numResidentRPs = 0;
         resetRequested = false;
