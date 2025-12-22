@@ -4721,7 +4721,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
      */
     private void enableEnterpriseAttestation(APDU apdu, byte[] buffer, short paramsIdx, short paramsLen, short lc) {
         // Parse CBOR map with RP IDs
-        // Expected format: map with key 0x01 (rpIds) containing an array of RP ID strings
+        // Expected format: byte string containing a map with key 0x01 (rpIds) containing an array of RP ID strings
         
         if (paramsLen == 0) {
             // No parameters - clear all enterprise attestation RPs
@@ -4746,6 +4746,25 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
 
         short readIdx = paramsIdx;
         
+        // Parse byte string wrapper
+        short innerLen = 0;
+        if (buffer[readIdx] == 0x58) {
+            // byte string with 1-byte length
+            readIdx++;
+            innerLen = ub(buffer[readIdx++]);
+        } else if (buffer[readIdx] >= 0x40 && buffer[readIdx] <= 0x57) {
+            // byte string with length in lower bits (0x40-0x57 for 0-23 bytes)
+            innerLen = (short)(buffer[readIdx++] - 0x40);
+        } else if (buffer[readIdx] == 0x59) {
+            // byte string with 2-byte length
+            readIdx++;
+            innerLen = Util.getShort(buffer, readIdx);
+            readIdx += 2;
+        } else {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
+        }
+        
+        // Now readIdx points to the actual map
         // Expect a map
         if (buffer[readIdx++] != (byte) 0xA1) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
