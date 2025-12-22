@@ -370,6 +370,10 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
      */
     private byte numEnterpriseAttestationRPIDs = 0;
     /**
+     * Set to true when enterprise attestation should be used for the current makeCredential operation
+     */
+    private boolean useEnterpriseAttestationForCurrentOp = false;
+    /**
      * Everything that needs to be hot in RAM instead of stored to the flash. All goes away on deselect or reset!
      */
     private final TransientStorage transientStorage;
@@ -1210,6 +1214,10 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         boolean useEnterpriseAttestation = enterpriseAttestationRequested && 
                                            enterpriseAttestationData != null && 
                                            filledEnterpriseAttestationData == enterpriseAttestationData.length;
+        
+        // Set flag for doSendResponse to use
+        useEnterpriseAttestationForCurrentOp = useEnterpriseAttestation;
+        
         byte[] attestationPreamble;
         if (selfAttestation) {
             attester.init(ecKeyPair.getPrivate(), Signature.MODE_SIGN);
@@ -1278,6 +1286,9 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         }
 
         doSendResponse(apdu, outputLen);
+        
+        // Clear the flag after response is sent
+        useEnterpriseAttestationForCurrentOp = false;
     }
 
 
@@ -1309,6 +1320,28 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
             }
         }
         return false;
+    }
+
+    /**
+     * Get the attestation data array to use for the current operation
+     * @return The appropriate attestation data array (enterprise or basic)
+     */
+    private byte[] getCurrentAttestationData() {
+        if (useEnterpriseAttestationForCurrentOp && enterpriseAttestationData != null) {
+            return enterpriseAttestationData;
+        }
+        return attestationData;
+    }
+
+    /**
+     * Get the filled length of the current attestation data
+     * @return The filled length of the appropriate attestation data
+     */
+    private short getCurrentAttestationDataFilled() {
+        if (useEnterpriseAttestationForCurrentOp && enterpriseAttestationData != null) {
+            return filledEnterpriseAttestationData;
+        }
+        return filledAttestationData;
     }
 
     /**
@@ -3079,7 +3112,8 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
 
         short totalOutputLen = outputLen;
         if (x5c) {
-            totalOutputLen = (short)(totalOutputLen + attestationData.length);
+            byte[] currentAttData = getCurrentAttestationData();
+            totalOutputLen = (short)(totalOutputLen + currentAttData.length);
         }
         if (lbk) {
             totalOutputLen = (short)(totalOutputLen + 35); // 1 byte map key, 2 bytes CBOR array, 32 bytes LBK
@@ -3111,14 +3145,15 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
             transientStorage.setStoredVars(outputLen, (byte) -1);
             if (amountFromMem < amountFitInBuffer) {
                 // We can send some X5C bytes, too!
+                byte[] currentAttData = getCurrentAttestationData();
                 short availableForX5C = (short) (amountFitInBuffer - amountFromMem);
-                if (availableForX5C > attestationData.length) {
-                    availableForX5C = (short) attestationData.length;
+                if (availableForX5C > currentAttData.length) {
+                    availableForX5C = (short) currentAttData.length;
                 }
-                Util.arrayCopyNonAtomic(attestationData, (short) 0,
+                Util.arrayCopyNonAtomic(currentAttData, (short) 0,
                         apduBytes, amountFromMem, availableForX5C);
 
-                if (availableForX5C == attestationData.length) {
+                if (availableForX5C == currentAttData.length) {
                     // ... and we still have room for more: let's go send the LBK stuff!
                     short availableForLBK = (short) (amountFitInBuffer - amountFromMem - availableForX5C);
                     if (availableForLBK > 35) {
@@ -4310,6 +4345,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         short x5cidx = 0;
         short lbkIdx = 0;
         if (x5c) {
+            byte[] currentAttData = getCurrentAttestationData();
             remainingValidInBufMem = transientStorage.getStoredIdx();
             if (remainingValidInBufMem > outgoingOffset) {
                 // We still have some reading from bufmem to do
@@ -4319,9 +4355,9 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                 x5cidx = (short)(outgoingOffset - remainingValidInBufMem);
                 remainingValidInBufMem = (short) 0;
 
-                if (x5cidx > attestationData.length) {
-                    lbkIdx = (short)(x5cidx - attestationData.length);
-                    x5cidx = (short) attestationData.length;
+                if (x5cidx > currentAttData.length) {
+                    lbkIdx = (short)(x5cidx - currentAttData.length);
+                    x5cidx = (short) currentAttData.length;
                 }
             }
         }
@@ -4349,11 +4385,12 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
             chunkToWrite -= writeFromBufMem;
         }
         if (x5c && chunkToWrite > 0) {
-            short x5crem = (short)(attestationData.length - x5cidx);
+            byte[] currentAttData = getCurrentAttestationData();
+            short x5crem = (short)(currentAttData.length - x5cidx);
             if (x5crem > chunkToWrite) {
                 x5crem = chunkToWrite;
             }
-            Util.arrayCopyNonAtomic(attestationData, x5cidx,
+            Util.arrayCopyNonAtomic(currentAttData, x5cidx,
                     apduBytes, remainingValidInBufMem, x5crem);
             chunkToWrite -= x5crem;
             if (lbk && chunkToWrite > 0) {
