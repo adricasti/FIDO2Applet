@@ -69,7 +69,8 @@ class AuthenticatorConfigTestCase(CTAPTestCase):
         with self.assertRaises(CtapError) as e:
             self.ctap2.make_credential(**self.basic_makecred_params)
 
-        self.assertEqual(CtapError.ERR.INVALID_PARAMETER, e.exception.code)
+        # Invalid enterprise attestation value (9) returns INVALID_OPTION
+        self.assertEqual(CtapError.ERR.INVALID_OPTION, e.exception.code)
 
     def test_makecred_rejected_with_alwaysUv_no_pin(self):
         Config(self.ctap2).toggle_always_uv()

@@ -21,6 +21,10 @@ public abstract class FIDOConstants {
      * "Vendor" command, non-FIDO-standard: install attestation certificates
      */
     public static final byte CMD_INSTALL_CERTS = 0x46;
+    /**
+     * "Vendor" command, non-FIDO-standard: install enterprise attestation certificates
+     */
+    public static final byte CMD_INSTALL_ENTERPRISE_CERTS = 0x47;
 
 
     // Client pin subCommands
